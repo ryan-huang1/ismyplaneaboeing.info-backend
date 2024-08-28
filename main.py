@@ -5,9 +5,29 @@ import json
 import re
 import os
 from datetime import datetime
+import socket
 
 app = Flask(__name__)
 CORS(app)  # This enables CORS for all routes
+
+def get_local_ip():
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        # doesn't even have to be reachable
+        s.connect(('10.255.255.255', 1))
+        IP = s.getsockname()[0]
+    except Exception:
+        IP = '127.0.0.1'
+    finally:
+        s.close()
+    return IP
+
+def get_public_ip():
+    try:
+        response = requests.get('https://api.ipify.org')
+        return response.text
+    except:
+        return "Unable to get public IP"
 
 def get_flight_info(flight_number, save_path='webpages'):
     def fetch_and_parse(flight_num):
@@ -115,4 +135,8 @@ def flight_info():
         return jsonify(flight_info), 404
 
 if __name__ == '__main__':
-    app.run(debug=True)
+    local_ip = get_local_ip()
+    public_ip = get_public_ip()
+    print(f"Server is running on Local IP: {local_ip}")
+    print(f"Server's Public IP: {public_ip}")
+    app.run(host='0.0.0.0', debug=True)
