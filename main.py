@@ -226,4 +226,4 @@ if __name__ == '__main__':
     print(f"Public IP: {public_ip}")
     print(f"Fetched {len(proxies)} proxies")
     print(f"Server is running on port: {PORT}")
-    app.run(host='0.0.0.0', debug=True, port=PORT)
+    app.run(host='0.0.0.0', port=80, debug=True)
