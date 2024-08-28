@@ -16,9 +16,6 @@ load_dotenv()
 ORDER_TOKEN = os.getenv('ORDER_TOKEN')
 PROXY_KEY = os.getenv('PROXY_KEY')
 
-# Set the port for the Flask app
-PORT = 5001
-
 app = Flask(__name__)
 CORS(app)  # This enables CORS for all routes
 
@@ -218,6 +215,11 @@ def flight_info():
     else:
         return jsonify(flight_info), 404
 
+@app.route('/test', methods=['GET'])
+def test():
+    app.logger.debug('Test route accessed')
+    return jsonify({"message": "Test successful"}), 200
+
 if __name__ == '__main__':
     local_ip = get_local_ip()
     public_ip = get_public_ip()
@@ -225,5 +227,4 @@ if __name__ == '__main__':
     print(f"Local IP: {local_ip}")
     print(f"Public IP: {public_ip}")
     print(f"Fetched {len(proxies)} proxies")
-    print(f"Server is running on port: {PORT}")
     app.run(host='0.0.0.0', port=80, debug=True)
