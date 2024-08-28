@@ -54,7 +54,7 @@ def fetch_proxies():
     payload = json.dumps({
         "orderToken": ORDER_TOKEN,
         "country": "US",
-        "numberOfProxies": 5,
+        "numberOfProxies": 1000,  # Requesting 100 proxies
         "whiteListIP": [get_local_ip()],
         "enableSock5": False,
         "planType": "SHARED_DC",
@@ -65,11 +65,7 @@ def fetch_proxies():
     }
     response = requests.post(url, headers=headers, data=payload)
     proxies = response.json()
-    
-    # Save the response to a JSON file
-    with open('proxies_response.json', 'w') as f:
-        json.dump(proxies, f, indent=2)
-    
+
     print(f"Fetched {len(proxies)} proxies")
     return proxies
 
@@ -82,13 +78,15 @@ def parse_proxy(proxy_string):
         'password': parts[3]
     }
 
+# Fetch and parse proxies, store in memory
 proxies = [parse_proxy(proxy) for proxy in fetch_proxies()]
 
-def get_flight_info(flight_number, save_path='webpages'):
+def get_flight_info(flight_number):
     def fetch_and_parse(flight_num):
         url = f"https://www.flightaware.com/live/flight/{flight_num}"
         headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'}
 
+        # Use a random proxy for each request
         proxy = random.choice(proxies)
         proxy_url = f"http://{proxy['username']}:{proxy['password']}@{proxy['proxy_address']}:{proxy['port']}"
         proxies_dict = {'http': proxy_url, 'https': proxy_url}
@@ -97,10 +95,6 @@ def get_flight_info(flight_number, save_path='webpages'):
         if response.status_code != 200:
             print(f"Failed to retrieve data. Status code: {response.status_code}")
             return None
-
-        os.makedirs(save_path, exist_ok=True)
-        with open(os.path.join(save_path, f"{flight_num}.html"), 'w', encoding='utf-8') as f:
-            f.write(response.text)
 
         match = re.search(r'var trackpollBootstrap = ({.*?});', response.text, re.DOTALL)
         if not match:
