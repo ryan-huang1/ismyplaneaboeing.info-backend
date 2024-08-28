@@ -1,19 +1,39 @@
+import os
+import signal
+import sys
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 import requests
 import json
 import re
-import os
 from datetime import datetime
 import socket
+from dotenv import load_dotenv
+import random
+
+# Load environment variables
+load_dotenv()
+ORDER_TOKEN = os.getenv('ORDER_TOKEN')
+PROXY_KEY = os.getenv('PROXY_KEY')
+
+# Set the port for the Flask app
+PORT = 5001
 
 app = Flask(__name__)
 CORS(app)  # This enables CORS for all routes
 
+# Signal handler function
+def signal_handler(sig, frame):
+    print('\nShutting down the server gracefully...')
+    sys.exit(0)
+
+# Register the signal handler
+signal.signal(signal.SIGINT, signal_handler)
+signal.signal(signal.SIGTERM, signal_handler)
+
 def get_local_ip():
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     try:
-        # doesn't even have to be reachable
         s.connect(('10.255.255.255', 1))
         IP = s.getsockname()[0]
     except Exception:
@@ -29,12 +49,51 @@ def get_public_ip():
     except:
         return "Unable to get public IP"
 
+def fetch_proxies():
+    url = "https://api.oculusproxies.com/v1/configure/proxy/getProxies"
+    payload = json.dumps({
+        "orderToken": ORDER_TOKEN,
+        "country": "US",
+        "numberOfProxies": 5,
+        "whiteListIP": [get_local_ip()],
+        "enableSock5": False,
+        "planType": "SHARED_DC",
+    })
+    headers = {
+        'authToken': PROXY_KEY,
+        'Content-Type': 'application/json'
+    }
+    response = requests.post(url, headers=headers, data=payload)
+    proxies = response.json()
+    
+    # Save the response to a JSON file
+    with open('proxies_response.json', 'w') as f:
+        json.dump(proxies, f, indent=2)
+    
+    print(f"Fetched {len(proxies)} proxies")
+    return proxies
+
+def parse_proxy(proxy_string):
+    parts = proxy_string.split(':')
+    return {
+        'proxy_address': parts[0],
+        'port': parts[1],
+        'username': parts[2],
+        'password': parts[3]
+    }
+
+proxies = [parse_proxy(proxy) for proxy in fetch_proxies()]
+
 def get_flight_info(flight_number, save_path='webpages'):
     def fetch_and_parse(flight_num):
         url = f"https://www.flightaware.com/live/flight/{flight_num}"
         headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'}
 
-        response = requests.get(url, headers=headers)
+        proxy = random.choice(proxies)
+        proxy_url = f"http://{proxy['username']}:{proxy['password']}@{proxy['proxy_address']}:{proxy['port']}"
+        proxies_dict = {'http': proxy_url, 'https': proxy_url}
+
+        response = requests.get(url, headers=headers, proxies=proxies_dict)
         if response.status_code != 200:
             print(f"Failed to retrieve data. Status code: {response.status_code}")
             return None
@@ -137,6 +196,9 @@ def flight_info():
 if __name__ == '__main__':
     local_ip = get_local_ip()
     public_ip = get_public_ip()
-    print(f"Server is running on Local IP: {local_ip}")
-    print(f"Server's Public IP: {public_ip}")
-    app.run(host='0.0.0.0', debug=True)
+    print(f"Server is starting...")
+    print(f"Local IP: {local_ip}")
+    print(f"Public IP: {public_ip}")
+    print(f"Fetched {len(proxies)} proxies")
+    print(f"Server is running on port: {PORT}")
+    app.run(host='0.0.0.0', debug=True, port=PORT)
