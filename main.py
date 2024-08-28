@@ -57,11 +57,12 @@ def get_public_ip():
 
 def fetch_proxies():
     url = "https://api.oculusproxies.com/v1/configure/proxy/getProxies"
+    public_ip = get_public_ip()
     payload = json.dumps({
         "orderToken": ORDER_TOKEN,
         "country": "US",
         "numberOfProxies": 1000,  # Requesting 1000 proxies
-        "whiteListIP": [get_local_ip()],
+        "whiteListIP": [public_ip],
         "enableSock5": False,
         "planType": "SHARED_DC",
     })
@@ -73,6 +74,7 @@ def fetch_proxies():
     proxies = response.json()
 
     print(f"Fetched {len(proxies)} proxies")
+    print(f"Whitelisted IP: {public_ip}")
     return proxies
 
 def parse_proxy(proxy_string):
