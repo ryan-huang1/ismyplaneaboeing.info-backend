@@ -22,6 +22,15 @@ PORT = 5001
 app = Flask(__name__)
 CORS(app)  # This enables CORS for all routes
 
+# List of user agents to rotate
+USER_AGENTS = [
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:89.0) Gecko/20100101 Firefox/89.0',
+    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.1.1 Safari/605.1.15',
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36 Edg/91.0.864.59',
+    'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/92.0.4515.107 Safari/537.36'
+]
+
 # Signal handler function
 def signal_handler(sig, frame):
     print('\nShutting down the server gracefully...')
@@ -54,7 +63,7 @@ def fetch_proxies():
     payload = json.dumps({
         "orderToken": ORDER_TOKEN,
         "country": "US",
-        "numberOfProxies": 1000,  # Requesting 100 proxies
+        "numberOfProxies": 1000,  # Requesting 1000 proxies
         "whiteListIP": [get_local_ip()],
         "enableSock5": False,
         "planType": "SHARED_DC",
@@ -82,27 +91,29 @@ def parse_proxy(proxy_string):
 proxies = [parse_proxy(proxy) for proxy in fetch_proxies()]
 
 def get_flight_info(flight_number):
-    def fetch_and_parse(flight_num):
+    def fetch_and_parse(flight_num, proxy, user_agent):
         url = f"https://www.flightaware.com/live/flight/{flight_num}"
-        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'}
+        headers = {'User-Agent': user_agent}
 
-        # Use a random proxy for each request
-        proxy = random.choice(proxies)
         proxy_url = f"http://{proxy['username']}:{proxy['password']}@{proxy['proxy_address']}:{proxy['port']}"
         proxies_dict = {'http': proxy_url, 'https': proxy_url}
 
-        response = requests.get(url, headers=headers, proxies=proxies_dict)
-        if response.status_code != 200:
-            print(f"Failed to retrieve data. Status code: {response.status_code}")
-            return None
+        try:
+            response = requests.get(url, headers=headers, proxies=proxies_dict, timeout=10)
+            if response.status_code != 200:
+                print(f"Failed to retrieve data. Status code: {response.status_code}")
+                return None
 
-        match = re.search(r'var trackpollBootstrap = ({.*?});', response.text, re.DOTALL)
-        if not match:
-            print("No flight data found in the response.")
-            return None
+            match = re.search(r'var trackpollBootstrap = ({.*?});', response.text, re.DOTALL)
+            if not match:
+                print("No flight data found in the response.")
+                return None
 
-        data = json.loads(match.group(1))
-        return data.get('flights', {})
+            data = json.loads(match.group(1))
+            return data.get('flights', {})
+        except requests.RequestException as e:
+            print(f"Request failed: {e}")
+            return None
 
     def process_flight_info(flights):
         if not flights:
@@ -151,15 +162,35 @@ def get_flight_info(flight_number):
             print("All retrieved data is 'N/A' or '0 minutes'.")
             return None
 
-    def try_flight_number(flight_num):
-        print(f"Attempting with flight number: {flight_num}")
-        flights = fetch_and_parse(flight_num)
-        return process_flight_info(flights), flight_num
+    def try_flight_number(flight_num, max_attempts=5):
+        used_proxy_addresses = set()
+        for attempt in range(max_attempts):
+            print(f"Attempt {attempt + 1} with flight number: {flight_num}")
+            
+            # Select a proxy that hasn't been used yet
+            available_proxies = [p for p in proxies if p['proxy_address'] not in used_proxy_addresses]
+            if not available_proxies:
+                print("All proxies have been used. Resetting proxy list.")
+                used_proxy_addresses.clear()
+                available_proxies = proxies
+            
+            proxy = random.choice(available_proxies)
+            used_proxy_addresses.add(proxy['proxy_address'])
+            
+            # Select a random user agent
+            user_agent = random.choice(USER_AGENTS)
+            
+            flights = fetch_and_parse(flight_num, proxy, user_agent)
+            if flights:
+                result = process_flight_info(flights)
+                if result:
+                    return result, flight_num
+        return None, None
 
     result, successful_flight_num = try_flight_number(flight_number)
 
     if not result:
-        print("No valid data found. Trying with 'L' added.")
+        print("No valid data found after multiple attempts. Trying with 'L' added.")
         match = re.match(r'^([A-Z]+)(\d+)$', flight_number)
         if match:
             modified_flight_number = f"{match.group(1)}L{match.group(2)}"
